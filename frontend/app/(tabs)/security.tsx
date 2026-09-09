@@ -371,7 +371,7 @@ function SmartQr() {
       <OverlayForm visible={show} title={`New ${kind === "cards" ? "ICE card" : kind.slice(0, -1)}`} color={colors.teal} submitLabel="Create" busy={busy} onClose={() => setShow(false)} onSubmit={onAdd} testID="qr-form">
         {kind === "vehicles" && (
           <>
-            <Field label="NUMBER PLATE" icon="hash" placeholder="MH01AB1234" autoCapitalize="characters" value={f1} onChangeText={setF1} testID="qr-f1-input" />
+            <Field label="NUMBER PLATE" icon="hash" placeholder="MH01AB1234" autoCapitalize="characters" autoCorrect={false} value={f1} onChangeText={(t) => setF1(t.toUpperCase())} testID="qr-f1-input" />
             <Field label="TYPE" icon="truck" placeholder="car / bike" value={f2} onChangeText={setF2} testID="qr-f2-input" />
           </>
         )}
