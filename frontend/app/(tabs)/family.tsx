@@ -190,7 +190,7 @@ export default function Family() {
               </View>
               {s.is_me ? (
                 <Pressable testID={`family-sos-ack-${s.id}`} onPress={() => ackFam(s.id)} style={styles.sosBannerBtn}>
-                  <Text style={styles.sosBannerBtnText}>I'm safe</Text>
+                  <Text style={styles.sosBannerBtnText}>I&apos;m safe</Text>
                 </Pressable>
               ) : null}
             </View>

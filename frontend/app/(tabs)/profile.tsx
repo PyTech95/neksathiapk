@@ -1,7 +1,9 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from 'expo-router';
+import { registerForPush } from '@/src/services/push';
 import { Image } from "expo-image";
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { errMessage } from "@/src/api/client";
@@ -27,6 +29,7 @@ const PREF_ROWS: { key: keyof NotifyPrefs; label: string; sub: string }[] = [
 ];
 
 export default function Profile() {
+  const router = useRouter();
   const { user, refreshUser, logout } = useAuth();
   const toast = useToast();
   const insets = useSafeAreaInsets();
@@ -54,6 +57,10 @@ export default function Profile() {
   const togglePref = async (key: keyof NotifyPrefs, value: boolean) => {
     setSavingPref(key);
     try {
+      if (key === 'push' && value && !(await registerForPush(user.id, true))) {
+        toast('Enable notifications in App permissions, then retry.', 'info');
+        router.push('/permissions'); return;
+      }
       await updateMe({ notify_prefs: { [key]: value } });
       await refreshUser();
     } catch (e) {
@@ -89,6 +96,7 @@ export default function Profile() {
           <NeonButton label="Edit profile" variant="ghost" color={colors.cyan} icon="edit-2" onPress={() => { setName(user.name); setPhone(user.phone); setEdit(true); }} testID="profile-edit-button" />
 
           <Text style={styles.sectionTitle}>Notifications</Text>
+          <NeonButton testID="profile-permissions-button" label="App permissions" icon="settings" variant="ghost" onPress={() => router.push('/permissions')} />
           <GlassCard padded={false} style={{ overflow: "hidden" }}>
             {PREF_ROWS.map((row, i) => (
               <View key={row.key} style={[styles.prefRow, i > 0 && styles.prefBorder]} testID={`pref-${row.key}`}>

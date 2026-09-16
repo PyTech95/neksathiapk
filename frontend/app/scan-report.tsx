@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
@@ -10,9 +10,8 @@ import {
   IncidentResult,
   messageCard,
   reportIncident,
-  resolveCard,
-  resolveQr,
-  resolveTag,
+  resolveScannedQr,
+  validQrId,
   ResolvedItem,
 } from "@/src/api/endpoints";
 import { Chip } from "@/src/components/Chip";
@@ -22,8 +21,10 @@ import { GlassCard } from "@/src/components/GlassCard";
 import { NeonButton } from "@/src/components/NeonButton";
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { useToast } from "@/src/context/ToastContext";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { colors, fonts, fontSize, spacing } from "@/src/theme";
 import { requestLocation } from "@/src/utils/location";
+import { openAppSettings } from '@/src/services/permissions';
+import { VehicleIcon } from '@/src/components/VehicleIcon';
 
 type Kind = "vehicle" | "tag" | "card";
 
@@ -59,59 +60,49 @@ export default function ScanReport() {
   const [busy, setBusy] = useState<"" | "notify" | "call">("");
   const [incident, setIncident] = useState<IncidentResult | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(''), [reload, setReload] = useState(0);
+  const [locationBusy, setLocationBusy] = useState(false), [locationError, setLocationError] = useState(''), [locationBlocked, setLocationBlocked] = useState(false);
+  const incidentRequest = useRef<Promise<IncidentResult> | null>(null);
 
   useEffect(() => {
-    requestLocation().then((r) => {
-      if (r.coords) setCoords({ lat: r.coords.latitude, lng: r.coords.longitude });
-    });
-  }, []);
+    let active = true;
+    setLoading(true); setLoadError(''); setNotFound(false); setItem(null);
+    setIncident(null); incidentRequest.current = null; setDone(null);
+    void (async () => {
+      try {
+        if (!validQrId(qrId)) throw new Error('QR reference is missing or invalid. Please scan again.');
+        const resolved = await resolveScannedQr(qrId);
+        if (!active) return;
+        setKind(resolved.kind); setItem(resolved.item); setReason(resolved.kind === 'vehicle' ? 'wrong_parking' : 'found');
+      } catch (e: any) {
+        if (!active) return;
+        if ([404, 410].includes(e?.response?.status)) setNotFound(true);
+        else setLoadError(errMessage(e));
+      } finally { if (active) setLoading(false); }
+    })();
+    return () => { active = false; };
+  }, [qrId, reload]);
 
-  useEffect(() => {
-    if (!qrId) return;
-    (async () => {
-      // Detect the item type by trying vehicle → tag → card resolvers.
-      try {
-        const v = await resolveQr(qrId);
-        setKind("vehicle");
-        setReason("wrong_parking");
-        setItem(v);
-        return;
-      } catch {
-        /* not a vehicle */
-      }
-      try {
-        const t = await resolveTag(qrId);
-        setKind("tag");
-        setReason("found");
-        setItem(t);
-        return;
-      } catch {
-        /* not a tag */
-      }
-      try {
-        const c = await resolveCard(qrId);
-        setKind("card");
-        setItem(c);
-        return;
-      } catch {
-        setNotFound(true);
-      } finally {
-        setLoading(false);
-      }
-    })().finally(() => setLoading(false));
-  }, [qrId]);
+  const shareLocation = async () => {
+    if (locationBusy) return;
+    setLocationBusy(true); setLocationError('');
+    const result = await requestLocation();
+    if (result.coords) setCoords({ lat: result.coords.latitude, lng: result.coords.longitude });
+    setLocationBlocked(!!result.blocked); setLocationError(result.error ?? ''); setLocationBusy(false);
+  };
 
   // Post the incident at most once (used by both Notify and Call).
   const ensureIncident = async (): Promise<IncidentResult> => {
     if (incident) return incident;
-    const r = await reportIncident(qrId, {
+    if (incidentRequest.current) return incidentRequest.current;
+    const request = reportIncident(qrId, {
       type: reason || "other",
       note: note || null,
       scanner_lat: coords?.lat ?? null,
       scanner_lng: coords?.lng ?? null,
-    });
-    setIncident(r);
-    return r;
+    }).then(r => { setIncident(r); return r; }).finally(() => { incidentRequest.current = null; });
+    incidentRequest.current = request;
+    return request;
   };
 
   const onNotifyVehicle = async () => {
@@ -133,7 +124,7 @@ export default function ScanReport() {
       const r = await ensureIncident();
       const num = (r.portal_number || "").replace(/\s+/g, "");
       if (num) {
-        Linking.openURL(`tel:${num}`);
+        await Linking.openURL(`tel:${num}`);
         toast("Connecting you privately to the owner…", "success");
       } else {
         toast("Private calling isn't available for this item", "error");
@@ -163,6 +154,7 @@ export default function ScanReport() {
   };
 
   const onSendCard = async () => {
+    if (!message.trim()) { toast('Enter a message before sending.', 'error'); return; }
     setBusy("notify");
     try {
       await messageCard(qrId, { name, phone, message });
@@ -186,14 +178,17 @@ export default function ScanReport() {
         <View style={styles.center}>
           <ActivityIndicator color={accent} />
         </View>
+      ) : loadError ? (
+        <View style={styles.center}><Text testID="scan-report-error" style={styles.error}>{loadError}</Text><NeonButton testID="scan-report-retry" label="Retry" onPress={() => setReload(v => v + 1)} /></View>
       ) : notFound ? (
         <View style={styles.center}>
           <EmptyState
             icon="help-circle"
             color={colors.amber}
             title="QR not recognised"
-            subtitle="This code isn't registered as a NekSathi item. Please check and try again."
+            subtitle="This code is deleted, expired, or not assigned to a NekSathi item. Please check and try again."
           />
+          <NeonButton testID="scan-report-rescan" label="Scan another QR" onPress={() => router.replace('/scan')} />
         </View>
       ) : done ? (
         <View style={styles.center}>
@@ -206,11 +201,11 @@ export default function ScanReport() {
         <KeyboardAwareScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bottomOffset={24}>
           <GlassCard borderColor={`${accent}66`} style={styles.itemCard}>
             <View style={[styles.bubble, { backgroundColor: `${accent}22` }]}>
-              <Feather name={kind === "vehicle" ? "truck" : kind === "tag" ? "tag" : "credit-card"} size={22} color={accent} />
+              {kind === 'vehicle' ? <VehicleIcon testID="scan-vehicle-icon" vehicle={item} color={accent} /> : <Feather name={kind === 'tag' ? 'tag' : 'credit-card'} size={22} color={accent} />}
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.itemTitle}>{title}</Text>
-              <Text style={styles.itemSub}>
+              <Text testID="scan-report-item-title" style={styles.itemTitle}>{title}</Text>
+              <Text testID="scan-report-item-details" style={styles.itemSub}>
                 {kind === "vehicle"
                   ? [item?.vehicle_type, item?.make_model, item?.color].filter(Boolean).join(" · ") || "Vehicle"
                   : kind === "tag"
@@ -269,16 +264,19 @@ export default function ScanReport() {
               </View>
 
               <Field label="NOTE (optional)" icon="edit-2" placeholder="Add a helpful detail" value={note} onChangeText={setNote} testID="scan-note-input" />
+              <NeonButton testID="scan-share-location" label={coords ? 'Location attached' : 'Attach my location (optional)'} icon="map-pin" variant="ghost" onPress={shareLocation} loading={locationBusy} disabled={!!busy || !!coords} />
+              {!!locationError && <Text testID="scan-location-error" style={styles.error}>{locationError} You can send without location.</Text>}
+              {locationBlocked && <NeonButton testID="scan-location-settings" label="Open Settings" variant="ghost" onPress={() => { void openAppSettings(); }} />}
 
               <Text style={styles.privacy}>🔒 The owner never sees your number — calls connect through a private NekSathi line.</Text>
 
               {kind === "vehicle" ? (
                 <View style={styles.actionRow}>
                   <View style={styles.actionCol}>
-                    <NeonButton label="Call owner" color={colors.green} icon="phone" onPress={onCallVehicle} loading={busy === "call"} testID="scan-vehicle-call" />
+                    <NeonButton label="Call owner" color={colors.green} icon="phone" onPress={onCallVehicle} loading={busy === "call"} disabled={!!busy || locationBusy} testID="scan-vehicle-call" />
                   </View>
                   <View style={styles.actionCol}>
-                    <NeonButton label="Send notification" color={accent} icon="bell" onPress={onNotifyVehicle} loading={busy === "notify"} testID="scan-vehicle-notify" />
+                    <NeonButton label="Send notification" color={accent} icon="bell" onPress={onNotifyVehicle} loading={busy === "notify"} disabled={!!busy || locationBusy} testID="scan-vehicle-notify" />
                   </View>
                 </View>
               ) : (
@@ -307,6 +305,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.text, fontFamily: fonts.displaySemi, fontSize: fontSize.lg, marginTop: spacing.xs },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   privacy: { color: colors.textDim, fontFamily: fonts.body, fontSize: fontSize.sm, lineHeight: 18 },
-  actionRow: { flexDirection: "row", gap: spacing.md },
+  actionRow: { gap: spacing.md },
+  error: { color: colors.red, fontSize: 15, lineHeight: 22, marginBottom: spacing.md },
   actionCol: { flex: 1 },
 });

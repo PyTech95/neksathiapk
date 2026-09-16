@@ -109,7 +109,10 @@ export interface Vehicle {
   make_model: string | null;
   color: string | null;
   qr_id: string;
-  speed_limit_kmh: number;
+  speed_limit_kmh: number | null;
+  photo_base64?: string | null;
+  tag_ids?: string[];
+  tags?: Tag[];
   lost_mode: boolean;
   created_at: string;
 }
@@ -124,6 +127,14 @@ export interface Tag {
   qr_id: string;
   lost_mode: boolean;
   created_at: string;
+  color?: string | null;
+  status?: string | null;
+  active?: boolean;
+  is_active?: boolean;
+  deleted?: boolean;
+  deleted_at?: string | null;
+  vehicle_id?: string | null;
+  vehicle_ids?: string[];
 }
 
 export interface Card {

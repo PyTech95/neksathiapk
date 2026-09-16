@@ -30,9 +30,10 @@ function distanceM(aLat: number, aLng: number, bLat: number, bLng: number): numb
 
 // true = outside every safe zone, false = inside one, null = can't determine
 async function outsideAllZones(): Promise<boolean | null> {
-  const zones = await listSafeZones().catch(() => []);
+  const zones = await listSafeZones().catch(() => null);
+  if (!zones) return null;
   if (!zones.length) return true; // no zones defined -> treat as "out and about"
-  const loc = await requestLocation();
+  const loc = await requestLocation(false);
   if (!loc.coords) return null;
   const { latitude, longitude } = loc.coords;
   return !zones.some((z) => distanceM(latitude, longitude, z.latitude, z.longitude) <= z.radius_m);
@@ -53,6 +54,6 @@ export async function syncGuardianState(): Promise<void> {
   }
 
   const running = await isGuardianRunning();
-  if (desired && !running) await startGuardian();
+  if (desired && !running) await startGuardian(false);
   else if (!desired && running) await stopGuardian();
 }

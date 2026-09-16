@@ -1,14 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { errMessage } from "@/src/api/client";
 import {
   addCard,
   addDevice,
   addTag,
-  addVehicle,
   listCards,
   listDevices,
   listIncidentDetails,
@@ -28,6 +27,11 @@ import { GlassCard } from "@/src/components/GlassCard";
 import { NeonButton } from "@/src/components/NeonButton";
 import { OverlayForm } from "@/src/components/OverlayForm";
 import { ScreenHeader } from "@/src/components/ScreenHeader";
+import { VehicleIcon } from '@/src/components/VehicleIcon';
+import { TagChips } from '@/src/components/TagChips';
+import { SearchSelect } from '@/src/components/SearchSelect';
+import { vehicleTags } from '@/src/utils/vehicles';
+import { loadVehicleRules, optionLabel } from '@/src/api/vehicleMetadata';
 import { addReceipt } from "@/src/services/receipts";
 import { useToast } from "@/src/context/ToastContext";
 import { colors, fonts, fontSize, radius, spacing, tint } from "@/src/theme";
@@ -144,7 +148,7 @@ function AntiTheft() {
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <GlassCard borderColor={colors.borderRed} style={styles.infoBanner}>
         <Feather name="info" size={16} color={colors.red} />
-        <Text style={styles.infoText}>Remote lock, siren, intruder-selfie & shutdown-resistant tracking run on the installed app build (Android Device Admin) — not in Expo Go. Register your device here so it's ready.</Text>
+        <Text style={styles.infoText}>Register your device for security reports. Remote lock and shutdown-resistant tracking require native Device Admin support.</Text>
       </GlassCard>
 
       {devices === null ? (
@@ -205,6 +209,19 @@ function SmartQr() {
   const [recoverUpi, setRecoverUpi] = useState("");
   const [recoverAmount, setRecoverAmount] = useState("");
   const [recoverPhone, setRecoverPhone] = useState("");
+  const [errors, setErrors] = useState<Partial<Record<QrKind, string>>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [tagTypes, setTagTypes] = useState<string[]>([]);
+  const [typeError, setTypeError] = useState('');
+  const [typeLoading, setTypeLoading] = useState(false);
+  const loadGeneration = useRef(0), adding = useRef(false);
+  const loadTagTypes = useCallback(async () => {
+    setTypeLoading(true); setTypeError('');
+    try { setTagTypes((await loadVehicleRules(true)).tagTypes); }
+    catch (e) { setTypeError(errMessage(e)); }
+    finally { setTypeLoading(false); }
+  }, []);
+  useEffect(() => { if (show && kind === 'tags') void loadTagTypes(); }, [show, kind, loadTagTypes]);
 
   const onRecover = (item: any) => {
     const m = String(item.reward_text || "").match(/₹\s*(\d+)/);
@@ -276,42 +293,60 @@ function SmartQr() {
     }
   };
 
-  const load = useCallback(() => {
-    listVehicles().then(setVehicles).catch(() => setVehicles([]));
-    listTags().then(setTags).catch(() => setTags([]));
-    listCards().then(setCards).catch(() => setCards([]));
+  const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    setRefreshing(true);
+    const results = await Promise.allSettled([listVehicles(), listTags(), listCards()]);
+    if (generation !== loadGeneration.current) return;
+    const nextErrors: Partial<Record<QrKind, string>> = {};
+    const [v, t, c] = results;
+    if (v.status === 'fulfilled') setVehicles(v.value); else nextErrors.vehicles = errMessage(v.reason);
+    if (t.status === 'fulfilled') setTags(t.value); else nextErrors.tags = errMessage(t.reason);
+    if (c.status === 'fulfilled') setCards(c.value); else nextErrors.cards = errMessage(c.reason);
+    setErrors(nextErrors); setRefreshing(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    void load();
+    const resume = AppState.addEventListener('change', s => { if (s === 'active') void load(); });
+    return () => { loadGeneration.current++; resume.remove(); };
+  }, [load]));
 
   const openQr = (qrId: string, title: string, subtitle: string, color: string) =>
     router.push({ pathname: "/qr-detail", params: { qrId, title, subtitle, color } });
 
   const onAdd = async () => {
+    if (adding.current) return;
     if (!f1.trim()) { toast("Please fill the required field", "error"); return; }
+    if (kind === 'tags' && !tagTypes.includes(f2)) { setTypeError('Select a tag type from the server list.'); return; }
+    adding.current = true;
     setBusy(true);
     try {
-      if (kind === "vehicles") await addVehicle(f1.trim().toUpperCase(), f2.trim() || "car");
-      else if (kind === "tags") await addTag(f1.trim(), f2.trim() || "bag");
+      if (kind === "tags") await addTag(f1.trim(), f2);
       else await addCard(f1.trim(), f2.trim() || undefined);
       toast("Created with a Smart QR", "success");
       setShow(false); setF1(""); setF2(""); load();
     } catch (e) {
       toast(errMessage(e, "Could not create"), "error");
-    } finally { setBusy(false); }
+    } finally { adding.current = false; setBusy(false); }
   };
 
   const list = kind === "vehicles" ? vehicles : kind === "tags" ? tags : cards;
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={colors.teal} />}>
       <View style={styles.chipRow}>
         <Chip label="Vehicles" icon="truck" color={colors.teal} tintBg={tint.teal} active={kind === "vehicles"} onPress={() => setKind("vehicles")} testID="qrkind-vehicles" />
         <Chip label="Tags" icon="tag" color={colors.teal} tintBg={tint.teal} active={kind === "tags"} onPress={() => setKind("tags")} testID="qrkind-tags" />
         <Chip label="ICE Cards" icon="credit-card" color={colors.teal} tintBg={tint.teal} active={kind === "cards"} onPress={() => setKind("cards")} testID="qrkind-cards" />
       </View>
 
-      {list === null ? (
+      <View style={styles.listActions}>
+        <NeonButton testID="security-refresh-items" label="Refresh" icon="refresh-cw" variant="ghost" color={colors.teal} onPress={load} loading={refreshing} style={{ flex: 1 }} />
+        <NeonButton testID="security-scan-qr" label="Scan QR" icon="camera" variant="ghost" color={colors.teal} onPress={() => router.push('/scan')} style={{ flex: 1 }} />
+      </View>
+      {!!errors[kind] && <GlassCard style={{ gap: spacing.md }}><Text testID={`qr-${kind}-load-error`} style={styles.errorText}>{errors[kind]}</Text><Text testID={`qr-${kind}-stale`} style={styles.meta}>Refresh to load the latest website data.</Text></GlassCard>}
+      {list === null && errors[kind] ? null : list === null ? (
         <View style={styles.pad}><ActivityIndicator color={colors.teal} /></View>
       ) : list.length === 0 ? (
         <EmptyState icon="grid" color={colors.teal} title={`No ${kind}`} subtitle="Create one to generate a private, scannable Smart QR." />
@@ -323,17 +358,22 @@ function SmartQr() {
           const isLost = !!item.lost_mode;
           return (
             <GlassCard key={item.id} borderColor={isLost ? colors.borderRed : colors.borderTeal} style={styles.qrCard} testID={`qr-item-${item.id}`}>
-              <Pressable style={styles.qrRow} onPress={() => openQr(item.qr_id, title, subtitle, isLost ? colors.red : colors.teal)} testID={`qr-open-${item.id}`}>
+              <Pressable style={styles.qrRow} onPress={() => kind === 'vehicles' ? router.push({ pathname: '/vehicle-detail', params: { id: item.id } }) : openQr(item.qr_id, title, subtitle, isLost ? colors.red : colors.teal)} testID={`qr-open-${item.id}`}>
                 <View style={[styles.qrThumb, isLost && { backgroundColor: tint.red }]}>
-                  <Feather name="maximize" size={18} color={isLost ? colors.red : colors.teal} />
+                  {kind === 'vehicles' ? <VehicleIcon vehicle={item} testID={`vehicle-type-icon-${item.id}`} color={isLost ? colors.red : colors.teal} /> : <Feather name={kind === 'tags' ? 'tag' : 'credit-card'} size={20} color={isLost ? colors.red : colors.teal} />}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{title}</Text>
-                  <Text style={styles.meta}>{subtitle}</Text>
+                  <Text testID={`qr-title-${item.id}`} style={styles.name}>{title}</Text>
+                  <Text testID={`qr-subtitle-${item.id}`} style={styles.meta}>{subtitle}</Text>
                 </View>
                 {isLost && <Chip label="LOST" color={colors.red} tintBg={tint.red} icon="alert-circle" />}
                 <Feather name="chevron-right" size={20} color={colors.textDim} />
               </Pressable>
+              {kind === 'vehicles' && <>
+                <Text testID={`vehicle-info-${item.id}`} style={styles.meta}>{[item.make_model, item.color, item.speed_limit_kmh !== null ? `${item.speed_limit_kmh} km/h` : ''].filter(Boolean).join(' · ') || 'Vehicle details not provided'}</Text>
+                <TagChips testID={`vehicle-tags-${item.id}`} tags={vehicleTags(item, tags ?? [])} />
+              </>}
+              {kind === 'tags' && <TagChips testID={`guardian-tag-${item.id}`} tags={[item]} />}
               {isLost && item.reward_text ? (
                 <Text style={styles.reward} testID={`qr-reward-${item.id}`}>🎁 {item.reward_text}</Text>
               ) : null}
@@ -366,19 +406,14 @@ function SmartQr() {
         })
       )}
 
-      <NeonButton label={`Add ${kind === "cards" ? "ICE card" : kind.slice(0, -1)}`} color={colors.teal} icon="plus" onPress={() => setShow(true)} testID="qr-add-button" />
+      <NeonButton label={`Add ${kind === "cards" ? "ICE card" : kind.slice(0, -1)}`} color={colors.teal} icon="plus" onPress={() => { if (kind === 'vehicles') router.push('/vehicle-form'); else { setF1(''); setF2(''); setShow(true); } }} testID="qr-add-button" />
 
       <OverlayForm visible={show} title={`New ${kind === "cards" ? "ICE card" : kind.slice(0, -1)}`} color={colors.teal} submitLabel="Create" busy={busy} onClose={() => setShow(false)} onSubmit={onAdd} testID="qr-form">
-        {kind === "vehicles" && (
-          <>
-            <Field label="NUMBER PLATE" icon="hash" placeholder="MH01AB1234" autoCapitalize="characters" autoCorrect={false} value={f1} onChangeText={(t) => setF1(t.toUpperCase())} testID="qr-f1-input" />
-            <Field label="TYPE" icon="truck" placeholder="car / bike" value={f2} onChangeText={setF2} testID="qr-f2-input" />
-          </>
-        )}
         {kind === "tags" && (
           <>
             <Field label="TAG NAME" icon="tag" placeholder="e.g. School Bag" value={f1} onChangeText={setF1} testID="qr-f1-input" />
-            <Field label="TYPE" icon="box" placeholder="bag / luggage / pet" value={f2} onChangeText={setF2} testID="qr-f2-input" />
+            <SearchSelect testID="tag-type-select" label="Tag type" value={f2} onChange={setF2} options={tagTypes.map(t => ({ id: t, label: optionLabel(t) }))} loading={typeLoading} disabled={busy} inline />
+            {!!typeError && <><Text testID="tag-type-error" style={styles.errorText}>{typeError}</Text><NeonButton testID="tag-type-retry" label="Reload tag types" onPress={loadTagTypes} variant="ghost" /></>}
           </>
         )}
         {kind === "cards" && (
@@ -423,7 +458,7 @@ function SmartQr() {
         onSubmit={submitRecover}
         testID="recover-form"
       >
-        <Text style={styles.rewardHelp}>Enter the finder's UPI ID to open your UPI app and send the promised reward. Leave blank to just turn off lost mode.</Text>
+        <Text style={styles.rewardHelp}>Enter the finder&apos;s UPI ID to open your UPI app and send the promised reward. Leave blank to just turn off lost mode.</Text>
         <Field label="FINDER'S UPI ID" icon="credit-card" placeholder="e.g. finder@upi" autoCapitalize="none" value={recoverUpi} onChangeText={setRecoverUpi} testID="recover-upi-input" />
         <Field label="AMOUNT (₹)" icon="gift" placeholder="e.g. 500" keyboardType="number-pad" value={recoverAmount} onChangeText={setRecoverAmount} testID="recover-amount-input" />
         <Field label="FINDER'S PHONE (optional)" icon="phone" placeholder="Send an auto thank-you SMS" keyboardType="phone-pad" value={recoverPhone} onChangeText={setRecoverPhone} testID="recover-phone-input" />
@@ -433,6 +468,8 @@ function SmartQr() {
 }
 
 const styles = StyleSheet.create({
+  listActions: { flexDirection: 'row', gap: spacing.sm },
+  errorText: { color: colors.red, fontSize: 15, lineHeight: 22 },
   root: { flex: 1, backgroundColor: colors.bg },
   badge: { position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, backgroundColor: colors.red, alignItems: "center", justifyContent: "center" },
   badgeText: { color: "#fff", fontFamily: fonts.displaySemi, fontSize: 10 },

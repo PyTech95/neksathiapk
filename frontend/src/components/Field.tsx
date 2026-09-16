@@ -12,12 +12,13 @@ interface Props extends TextInputProps {
 export const Field = forwardRef<TextInput, Props>(({ label, icon, style, ...rest }, ref) => {
   return (
     <View style={styles.wrap}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text testID={rest.testID ? `${rest.testID}-label` : undefined} style={styles.label}>{label}</Text>}
       <View style={styles.inputWrap}>
         {icon && <Feather name={icon} size={18} color={colors.textDim} style={styles.icon} />}
         <TextInput
           ref={ref}
           placeholderTextColor={colors.textDim}
+          accessibilityLabel={label}
           style={[styles.input, style]}
           {...rest}
         />

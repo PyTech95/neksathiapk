@@ -10,6 +10,9 @@ import { Platform } from "react-native";
 
 import { TOKEN_KEY } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
+import { apiBaseUrl } from '@/src/api/config';
+import { explainPermission } from './permissions';
+import { colors } from '@/src/theme';
 
 export const GUARDIAN_TASK = "neksathi-location-ping";
 export const GUARDIAN_ENABLED_KEY = "neksathi_guardian_enabled";
@@ -32,7 +35,8 @@ if (Platform.OS !== "web") {
 
       const loc = locations[locations.length - 1];
       try {
-        await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/me/location`, {
+        if (!apiBaseUrl || !loc?.coords) return;
+        await fetch(`${apiBaseUrl}/me/location`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -61,15 +65,18 @@ export interface GuardianResult {
   blocked?: boolean;
 }
 
-export async function startGuardian(): Promise<GuardianResult> {
+export async function startGuardian(interactive = true): Promise<GuardianResult> {
   if (Platform.OS === "web") {
     return { ok: false, error: "Background Guardian works on the installed app, not the web preview." };
   }
-  const fg = await Location.requestForegroundPermissionsAsync();
+  try {
+  let fg = await Location.getForegroundPermissionsAsync();
+  if (!fg.granted && fg.canAskAgain && interactive && await explainPermission('location')) fg = await Location.requestForegroundPermissionsAsync();
   if (fg.status !== Location.PermissionStatus.GRANTED) {
     return { ok: false, error: "Location permission is required.", blocked: !fg.canAskAgain };
   }
-  const bg = await Location.requestBackgroundPermissionsAsync();
+  let bg = await Location.getBackgroundPermissionsAsync();
+  if (!bg.granted && bg.canAskAgain && interactive && await explainPermission('background-location')) bg = await Location.requestBackgroundPermissionsAsync();
   if (bg.status !== Location.PermissionStatus.GRANTED) {
     return {
       ok: false,
@@ -77,7 +84,6 @@ export async function startGuardian(): Promise<GuardianResult> {
       blocked: !bg.canAskAgain,
     };
   }
-  try {
     if (!(await isGuardianRunning())) {
       await Location.startLocationUpdatesAsync(GUARDIAN_TASK, {
         accuracy: Location.Accuracy.Balanced,
@@ -89,7 +95,7 @@ export async function startGuardian(): Promise<GuardianResult> {
         foregroundService: {
           notificationTitle: "NekSathi Guardian is active",
           notificationBody: "Sharing your live location with family every minute.",
-          notificationColor: "#22d3ee",
+          notificationColor: colors.cyan,
         },
       });
     }

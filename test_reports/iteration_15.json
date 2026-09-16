@@ -1,0 +1,68 @@
+{
+  "summary": "Executed live API + Expo web integration testing against https://api.neksathi.in and preview frontend. Backend parity tests passed; core mobile-web flows mostly work (login, session restore, vehicle create/edit, QR copy/share UI, scan own QR to vehicle-detail, permissions screen, tab regression, logout/relogin). Found startup resilience simulation and tag-type selector issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Startup resilience screen",
+        "issue": "SIMULATED /api/auth/me 500 during reload did not surface startup-error-screen; app landed on login screen instead.",
+        "testID": "startup-error-screen",
+        "priority": "HIGH"
+      },
+      {
+        "component": "New Tag form selector",
+        "issue": "Tag type selector was not opening option modal reliably in overlay flow; observed 0 selectable options and close control not rendered.",
+        "testID": "tag-type-select",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Startup error simulation (auth/me)",
+        "issue": "SIMULATED 500 and malformed /auth/me did not consistently route to startup retry UI in browser automation; session dropped to login path.",
+        "affected_testIDs": [
+          "startup-error-screen",
+          "startup-retry-button",
+          "login-submit-button"
+        ]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_live_api_parity_iteration15.py",
+    "/app/test_reports/pytest/iteration15_live.xml",
+    "/app/test_reports/artifacts_iter15_logincheck/after_login.jpg",
+    "/app/test_reports/artifacts_iter15_vehicleonly/vehicle_created_detail.jpg",
+    "/app/test_reports/artifacts_iter15_perm_tabs/permissions_screen.jpg",
+    "/app/test_reports/artifacts_iter15_scanown2/scan_to_vehicle_detail.jpg",
+    "/app/test_reports/artifacts_iter15_sim500/login_after_500.jpg"
+  ],
+  "action_items": [
+    "Fix startup simulation path so SIMULATED /auth/me 500/malformed responses render startup-error-screen + retry instead of login fallback.",
+    "Fix tag-type-select interaction/data loading in New Tag overlay; ensure server enum options render and are selectable.",
+    "Re-run SIMULATED startup resilience matrix (500/timeout/malformed/401) after fix.",
+    "Device-dependent pending: native permission popup behavior, Settings resume behavior, notification tap/resume, fresh Android install/restart remain unverified in this environment."
+  ],
+  "critical_code_review_comments": [
+    "Expo runtime repeatedly logs dependency compatibility warnings (expo / expo-constants mismatch); not a blocker in this run but should be stabilized.",
+    "Startup resilience depends on /auth/me bootstrap correctness; observed behavior under intercepted errors is inconsistent with intended startup retry UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_live_api_parity_iteration15.py",
+    "/app/test_reports/iteration_15.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "78%"
+  },
+  "seed_data_creation": "Created one TEST vehicle via UI: number plate MH12AB1077; backend pytest created and then attempted cleanup for its own vehicle records.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Credentials file present and valid (demo@neksathi.app/demo1234). For scan own-QR validation, known demo QR used: cd85b7e5-a36b-44d0-8c9c-556c33db0330. Use security-scan-qr button path (direct page.goto('/scan') and page.goto('/scan-report?...') were inconsistent in this Expo web harness).",
+  "rca_of_issue": "Likely RCA for startup simulation miss: during intercepted /auth/me failure runs, bootstrap state did not persist token path consistently in browser automation, causing login route instead of startup-error-state. This may indicate a race between secure token persistence/read on web AsyncStorage and bootstrap route guard under forced network interception."
+}

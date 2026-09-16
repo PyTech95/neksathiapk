@@ -28,7 +28,7 @@ export default function Home() {
   const [shareLoading, setShareLoading] = useState(false);
 
   const startSos = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     setCountdown(true);
   };
   const [blocked, setBlocked] = useState(false);
@@ -68,7 +68,7 @@ export default function Home() {
     }
   };
 
-  useFocusEffect(useCallback(() => { loadStats(); reconcileCheckIn().then((fired) => { if (fired) { toast("Check-in missed — SOS sent automatically", "error"); loadStats(); } }); }, [loadStats]));
+  useFocusEffect(useCallback(() => { loadStats(); reconcileCheckIn().then((fired) => { if (fired) { toast("Check-in missed — SOS sent automatically", "error"); loadStats(); } }).catch(() => {}); }, [loadStats, toast]));
 
   // While an SOS is active (not yet acknowledged), keep streaming live location
   // to the backend every ~8s so guardians can track in real time (spec §2).
@@ -76,7 +76,7 @@ export default function Home() {
     if (!activeSos) return;
     let cancelled = false;
     const tick = async () => {
-      const loc = await requestLocation();
+      const loc = await requestLocation(false);
       if (!cancelled && loc.coords) {
         pingLocation(loc.coords.latitude, loc.coords.longitude).catch(() => {});
       }
@@ -98,7 +98,7 @@ export default function Home() {
     setBlocked(false);
     try {
       const ev = await triggerSos(loc.coords.latitude, loc.coords.longitude);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       toast(`SOS sent — ${ev.notified} guardian(s) alerted`, "success");
       loadStats();
     } catch (e) {
@@ -153,7 +153,7 @@ export default function Home() {
               <Text style={styles.sosBannerSub}>Guardians alerted · escalating until acknowledged</Text>
             </View>
             <Pressable testID="active-sos-cancel" onPress={onCancelSos} style={styles.sosBannerBtn}>
-              <Text style={styles.sosBannerBtnText}>I'm safe</Text>
+              <Text style={styles.sosBannerBtnText}>I&apos;m safe</Text>
             </Pressable>
           </View>
         )}

@@ -6,7 +6,6 @@ import { Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from "re
 import { listAlerts } from "@/src/api/endpoints";
 import { GlassCard } from "@/src/components/GlassCard";
 import { NeonButton } from "@/src/components/NeonButton";
-import { ScanMap } from "@/src/components/ScanMap";
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -74,19 +73,19 @@ export default function AlertDetail() {
         ) : null}
 
         {hasLoc ? (
-          <GlassCard style={styles.mapCard} padded={false}>
-            <View style={styles.mapWrap}>
-              <ScanMap points={[{ id: "finder", lat: lat!, lng: lng!, label: "Finder location", when, danger: true }]} />
+          <GlassCard style={styles.card}>
+            <View style={styles.locRow}>
+              <View style={[styles.locIcon, { backgroundColor: `${colors.teal}22` }]}>
+                <Feather name="map-pin" size={20} color={colors.teal} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.locTitle}>Finder location</Text>
+                <Text style={styles.coords}>
+                  {lat!.toFixed(5)}, {lng!.toFixed(5)}
+                </Text>
+              </View>
             </View>
-            <View style={styles.mapFoot}>
-              <Feather name="map-pin" size={16} color={colors.teal} />
-              <Text style={styles.coords}>
-                {lat!.toFixed(5)}, {lng!.toFixed(5)}
-              </Text>
-              <Text style={styles.openLink} onPress={openMaps}>
-                Open in Maps
-              </Text>
-            </View>
+            <NeonButton label="Open in Maps" variant="ghost" color={colors.teal} icon="navigation" onPress={openMaps} testID="alert-open-maps" />
           </GlassCard>
         ) : (
           <GlassCard style={styles.card}>
@@ -122,9 +121,9 @@ const styles = StyleSheet.create({
   note: { color: colors.text, fontFamily: fonts.body, fontSize: fontSize.base, lineHeight: 22 },
   noteMuted: { color: colors.textDim, fontFamily: fonts.body, fontSize: fontSize.base },
   mapCard: { overflow: "hidden" },
-  mapWrap: { height: 240, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, overflow: "hidden" },
-  mapFoot: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md },
-  coords: { flex: 1, color: colors.textMuted, fontFamily: fonts.body, fontSize: fontSize.sm },
-  openLink: { color: colors.teal, fontFamily: fonts.displaySemi, fontSize: fontSize.sm },
+  locRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  locIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  locTitle: { color: colors.text, fontFamily: fonts.displaySemi, fontSize: fontSize.base },
+  coords: { color: colors.textMuted, fontFamily: fonts.body, fontSize: fontSize.sm, marginTop: 2 },
   privacy: { color: colors.textDim, fontFamily: fonts.body, fontSize: fontSize.sm, textAlign: "center" },
 });

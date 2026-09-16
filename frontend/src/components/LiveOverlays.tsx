@@ -14,13 +14,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import InCallManager from "@/src/lib/incall";
-import {
-  mediaDevices,
-  RTCPeerConnection,
-  RTCSessionDescription,
-  RTCIceCandidate,
-} from "@/src/lib/webrtc";
+import type { RTCPeerConnection } from 'react-native-webrtc';
+import { diagnostic } from '@/src/utils/diagnostics';
 
 import {
   IncomingCall,
@@ -84,6 +79,9 @@ export function LiveOverlays() {
   callRef.current = call;
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const rtcRef = useRef<typeof import('@/src/lib/webrtc') | null>(null);
+  const inCallRef = useRef<typeof import('@/src/lib/incall')['default'] | null>(null);
+  const aliveRef = useRef(true);
   const localStreamRef = useRef<any>(null);
   const candidatePollRef = useRef<ReturnType<
     typeof setInterval
@@ -195,7 +193,7 @@ export function LiveOverlays() {
               }).catch(() => {});
 
               ringtone.loop = false;
-              ringtone.seekTo(0);
+              ringtone.seekTo(0).catch(() => {});
               ringtone.play();
             } catch {
               // ignore audio failures
@@ -242,7 +240,7 @@ export function LiveOverlays() {
       }).catch(() => {});
 
       ringtone.loop = true;
-      ringtone.seekTo(0);
+      ringtone.seekTo(0).catch(() => {});
       ringtone.play();
     } catch {
       // ignore
@@ -273,7 +271,7 @@ export function LiveOverlays() {
 
       try {
         ringtone.pause();
-        ringtone.seekTo(0);
+        ringtone.seekTo(0).catch(() => {});
       } catch {
         // ignore
       }
@@ -299,7 +297,7 @@ export function LiveOverlays() {
 
     try {
       ringtone.pause();
-      ringtone.seekTo(0);
+      ringtone.seekTo(0).catch(() => {});
     } catch {
       // ignore
     }
@@ -332,7 +330,7 @@ export function LiveOverlays() {
     pcRef.current = null;
 
     try {
-      InCallManager.stop();
+      inCallRef.current?.stop();
     } catch {
       // ignore
     }
@@ -382,15 +380,12 @@ export function LiveOverlays() {
 
       try {
         await pc.addIceCandidate(
-          new RTCIceCandidate(candidate as any),
+          new (rtcRef.current!.RTCIceCandidate)(candidate as any),
         );
 
         appliedCandidates.current.add(key);
       } catch (error) {
-        console.warn(
-          "Failed to add caller ICE candidate",
-          error,
-        );
+        diagnostic('call-candidate-failed');
       }
     }
   };
@@ -489,6 +484,12 @@ export function LiveOverlays() {
     setSeconds(0);
 
     try {
+      // Do not initialize WebRTC or call routing just to open the app.
+      const rtc = await import('@/src/lib/webrtc');
+      rtcRef.current = rtc;
+      try { inCallRef.current = (await import('@/src/lib/incall')).default; } catch { /* optional audio routing */ }
+      if (!aliveRef.current || callRef.current?.call_id !== current.call_id) return;
+      const { mediaDevices, RTCPeerConnection, RTCSessionDescription } = rtc;
       // -------------------------------------------------------------
       // Start microphone
       // -------------------------------------------------------------
@@ -500,14 +501,17 @@ export function LiveOverlays() {
         });
 
       localStreamRef.current = stream;
+      if (!aliveRef.current || callRef.current?.call_id !== current.call_id) {
+        stream.getTracks().forEach((track: any) => track.stop()); cleanupPeer(); return;
+      }
 
       // Proper Android call audio routing.
       try {
-        InCallManager.start({
+        inCallRef.current?.start({
           media: "audio",
         });
 
-        InCallManager.setForceSpeakerphoneOn(false);
+        inCallRef.current?.setForceSpeakerphoneOn(false);
       } catch {
         // WebRTC can still work even if call routing fails.
       }
@@ -595,6 +599,7 @@ export function LiveOverlays() {
       > | null = null;
 
       for (let i = 0; i < 12; i += 1) {
+        if (!aliveRef.current || callRef.current?.call_id !== current.call_id) { cleanupPeer(); return; }
         details = await getCallDetails(
           current.call_id,
         );
@@ -671,10 +676,7 @@ export function LiveOverlays() {
         current.call_id,
       );
     } catch (error) {
-      console.error(
-        "WebRTC accept failed",
-        error,
-      );
+      diagnostic('voice-call-connect-failed');
 
       try {
         await endCall(current.call_id);
@@ -709,7 +711,10 @@ export function LiveOverlays() {
 
   // Component unmount cleanup.
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
+      Vibration.cancel();
       cleanupPeer();
     };
   }, []);

@@ -1,0 +1,47 @@
+{
+  "scope": "Main-agent verification after iteration 15 fixes; Expo mobile-web and live API, NOT Android device testing",
+  "reported_issues": [
+    {"issue": "Startup error route not consistently visible", "resolution": "Atomic bootstrap loading/error state plus route-independent startup gate; actual saved-session SIMULATED 500, null and offline tests PASS; Retry restores the same session without login", "status": "verified"},
+    {"issue": "Tag dropdown inside modal unreliable", "resolution": "Inline searchable selector within the tag form instead of nested native modals; searched luggage, selected server enum, selection retained", "status": "verified"},
+    {"issue": "Public scan deep-link discarded at bootstrap", "resolution": "Public scan routes remain registered during bootstrap; signed-out invalid scan-report deep-link and network retry PASS", "status": "verified"},
+    {"issue": "Expo compatibility warnings", "resolution": "Installed manifest-declared Expo 54.0.37 / Constants 18.0.14 via Expo installer", "status": "verified"}
+  ],
+  "checks": {
+    "typescript": "PASS: npx tsc --noEmit",
+    "android_javascript_export": "PASS: npx expo export --platform android --no-bytecode; 2259 modules",
+    "android_apk": "NOT PRODUCED: no Android SDK/Java/device; host aarch64 cannot execute packaged x86 Hermes compiler",
+    "real_backend": "PASS: iteration15 pytest 5/5, unchanged live vehicle/QR/auth/schema contract",
+    "saved_session_500": "PASS, SIMULATED fault with real saved login",
+    "saved_session_null": "PASS, SIMULATED null account response",
+    "saved_session_offline": "PASS, SIMULATED disconnected auth/me request",
+    "retry_without_new_login": "PASS",
+    "expired_authenticated_session": "PASS, SIMULATED 401 -> login",
+    "inline_tag_search_selection": "PASS, actual server schema options",
+    "public_invalid_qr_deep_link": "PASS, real live 404",
+    "public_qr_network_retry": "PASS, SIMULATED disconnected resolver then real retry",
+    "vehicle_qr_verification_display": "PASS, real owned vehicle at 360px viewport",
+    "qr_share_copy_controls": "PASS, verified link and responsive controls; native share sheet remains device-dependent",
+    "untrusted_scan_url": "PASS, rejected with inline error and retry",
+    "test_record_cleanup": "PASS, iteration15 UI-created MH12AB1077 with TEST ITER15 MODEL deleted, readback 404; unrelated records untouched"
+  },
+  "evidence": [
+    "artifacts_main_retest/neksathi-retest-baseline.jpeg",
+    "artifacts_main_retest/neksathi-retest-startup-500.jpeg",
+    "artifacts_main_retest/neksathi-retest-tag-type.jpeg",
+    "artifacts_main_retest/neksathi-offline-retry.jpeg",
+    "artifacts_main_retest/neksathi-invalid-qr.jpeg",
+    "artifacts_main_retest/neksathi-final-vehicle-qr.jpeg",
+    "artifacts_main_retest/neksathi-final-qr-share.jpeg",
+    "artifacts_main_retest/neksathi-final-scan-error.jpeg"
+  ],
+  "outstanding": [
+    "Actual Android process crash root cause cannot be confirmed without Logcat. Fresh install, reboot, hardware camera/permissions/settings/permanent denial and native push remain unverified.",
+    "Live API exposes combined free-text make_model, not make/model catalog IDs/endpoints. Separate dependent dropdowns remain blocked upstream.",
+    "Live TagOut has no vehicle mapping/status/colour fields. Guardian tags are synchronized; mapped vehicle tag parity requires upstream support.",
+    "QR link sharing implemented; QR image download/export not implemented.",
+    "Existing TURN/call fan-out/OTP provider blockers remain unchanged."
+  ],
+  "test_credentials": "Existing /app/memory/test_credentials.md verified; no accounts created or passwords changed",
+  "api_changes": "None. Website source, production service implementation, database schema unchanged.",
+  "native_verification_claimed": false
+}

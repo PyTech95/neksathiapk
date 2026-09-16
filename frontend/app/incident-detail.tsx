@@ -7,7 +7,6 @@ import { errMessage } from "@/src/api/client";
 import { getIncidentDetail, IncidentDetail, respondIncident } from "@/src/api/endpoints";
 import { GlassCard } from "@/src/components/GlassCard";
 import { NeonButton } from "@/src/components/NeonButton";
-import { ScanMap } from "@/src/components/ScanMap";
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { useToast } from "@/src/context/ToastContext";
 import { colors, fonts, fontSize, radius, spacing, tint } from "@/src/theme";
@@ -80,8 +79,9 @@ export default function IncidentDetailScreen() {
 
   const lat = incident?.scanner_lat ?? null;
   const lng = incident?.scanner_lng ?? null;
-  const hasLoc = lat != null && !Number.isNaN(lat) && lng != null && !Number.isNaN(lng);
-  const photo = incident?.evidence_photo_base64 || incident?.reporter_photo_base64 || null;
+  const hasLoc = typeof lat === 'number' && Number.isFinite(lat) && Math.abs(lat) <= 90 && typeof lng === 'number' && Number.isFinite(lng) && Math.abs(lng) <= 180;
+  const photoValue = incident?.evidence_photo_base64 || incident?.reporter_photo_base64;
+  const photo = typeof photoValue === 'string' ? photoValue : null;
   const typeLabel = String(incident?.type || "alert").replace(/_/g, " ");
   const when = incident?.created_at ? new Date(incident.created_at).toLocaleString() : "";
   const responded = incident?.owner_response ?? null;
@@ -92,7 +92,7 @@ export default function IncidentDetailScreen() {
       ios: `http://maps.apple.com/?ll=${lat},${lng}&q=Finder`,
       default: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
     });
-    Linking.openURL(url!);
+    Linking.openURL(url!).catch(() => toast('Could not open Maps on this device.', 'error'));
   };
 
   const mmss = (s: number) => {
@@ -173,19 +173,19 @@ export default function IncidentDetailScreen() {
           ) : null}
 
           {hasLoc ? (
-            <GlassCard style={styles.mapCard} padded={false}>
-              <View style={styles.mapWrap}>
-                <ScanMap points={[{ id: "finder", lat: lat!, lng: lng!, label: "Finder location", when, danger: true }]} />
+            <GlassCard style={styles.card}>
+              <View style={styles.locRow}>
+                <View style={[styles.locIcon, { backgroundColor: tint.cyan }]}>
+                  <Feather name="map-pin" size={20} color={colors.teal} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.locTitle}>Finder location</Text>
+                  <Text style={styles.coords}>
+                    {lat!.toFixed(5)}, {lng!.toFixed(5)}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.mapFoot}>
-                <Feather name="map-pin" size={16} color={colors.teal} />
-                <Text style={styles.coords}>
-                  {lat!.toFixed(5)}, {lng!.toFixed(5)}
-                </Text>
-                <Text style={styles.openLink} onPress={openMaps}>
-                  Open in Maps
-                </Text>
-              </View>
+              <NeonButton label="Open in Maps" variant="ghost" color={colors.teal} icon="navigation" onPress={openMaps} testID="incident-open-maps" />
             </GlassCard>
           ) : null}
 
@@ -228,6 +228,9 @@ export default function IncidentDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  locRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  locIcon: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  locTitle: { color: colors.text, fontFamily: fonts.displaySemi, fontSize: fontSize.base },
   root: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.lg },
   scroll: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxxl },

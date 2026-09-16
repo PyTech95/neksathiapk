@@ -27,7 +27,9 @@ export async function getSchedule(): Promise<GuardianSchedule> {
   const raw = await storage.getItem(SCHEDULE_KEY, "");
   if (!raw) return DEFAULT_SCHEDULE;
   try {
-    return { ...DEFAULT_SCHEDULE, ...JSON.parse(raw as string) };
+    const parsed = JSON.parse(raw as string);
+    if (!parsed || !Array.isArray(parsed.days) || typeof parsed.start !== 'number' || typeof parsed.end !== 'number') return DEFAULT_SCHEDULE;
+    return { ...DEFAULT_SCHEDULE, ...parsed, enabled: parsed.enabled === true, days: parsed.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6) };
   } catch {
     return DEFAULT_SCHEDULE;
   }
@@ -55,7 +57,7 @@ export async function reconcileSchedule(): Promise<"started" | "stopped" | null>
   const within = isWithinWindow(s);
   const running = await isGuardianRunning();
   if (within && !running) {
-    const r = await startGuardian();
+    const r = await startGuardian(false);
     return r.ok ? "started" : null;
   }
   if (!within && running) {

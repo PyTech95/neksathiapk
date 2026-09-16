@@ -63,7 +63,7 @@ export default function CheckInScreen() {
               <Feather name="clock" size={26} color={colors.red} />
             </View>
             <Text style={styles.timer}>{remaining}</Text>
-            <Text style={styles.hint}>If you don't check in, NekSathi will auto-send an SOS with your location to your guardians.</Text>
+            <Text style={styles.hint}>If you don&apos;t check in, NekSathi will auto-send an SOS with your location to your guardians.</Text>
             <NeonButton label="I'm safe — check in" color={colors.green} icon="check" onPress={stop} testID="checkin-safe-button" />
           </GlassCard>
         ) : (

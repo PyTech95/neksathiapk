@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 36,
+    minHeight: 44,
     flexShrink: 0,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,

@@ -1,4 +1,7 @@
 import { api } from "./client";
+import { rows, record, text } from './normalizers';
+import { normalizeVehicle, activeTag } from '@/src/utils/vehicles';
+import { apiOrigin, webOrigin } from './config';
 import {
   AlertItem,
   AuthResponse,
@@ -34,7 +37,7 @@ export const otpResend = (phone: string) =>
   api
     .post<OtpSendResult>("/auth/otp/resend", { phone })
     .then((r) => r.data)
-    .catch(() => otpRequest(phone));
+    .catch((e) => { if ([404, 405].includes(e?.response?.status)) return otpRequest(phone); throw e; });
 
 export const otpVerify = (phone: string, code: string, name?: string) =>
   api.post<AuthResponse>("/auth/otp/verify", { phone, code, name }).then((r) => r.data);
@@ -52,11 +55,11 @@ export const updateMe = (payload: Partial<Pick<User, "name" | "phone">> & { noti
 export const triggerSos = (latitude: number, longitude: number, message?: string) =>
   api.post<SosEvent>("/me/sos", { latitude, longitude, message }).then((r) => r.data);
 
-export const listSosEvents = () => api.get<SosEvent[]>("/me/sos-events").then((r) => r.data);
+export const listSosEvents = () => api.get<SosEvent[]>("/me/sos-events").then((r) => rows<SosEvent>(r.data));
 export const ackSos = (id: string) => api.post(`/me/sos-events/${id}/ack`, {}).then((r) => r.data);
 
 export const listContacts = () =>
-  api.get<EmergencyContact[]>("/me/emergency-contacts").then((r) => r.data);
+  api.get<EmergencyContact[]>("/me/emergency-contacts").then((r) => rows<EmergencyContact>(r.data));
 
 export const addContact = (name: string, phone: string, relation?: string) =>
   api.post<EmergencyContact>("/me/emergency-contacts", { name, phone, relation }).then((r) => r.data);
@@ -71,7 +74,7 @@ export const pingLocation = (latitude: number, longitude: number, battery?: numb
   api.post("/me/location", { latitude, longitude, battery }).then((r) => r.data);
 
 // ---------- Safe Zones ----------
-export const listSafeZones = () => api.get<SafeZone[]>("/me/safe-zones").then((r) => r.data);
+export const listSafeZones = () => api.get<SafeZone[]>("/me/safe-zones").then((r) => rows<SafeZone>(r.data));
 
 export const addSafeZone = (name: string, latitude: number, longitude: number, radius_m: number) =>
   api.post<SafeZone>("/me/safe-zones", { name, latitude, longitude, radius_m }).then((r) => r.data);
@@ -80,7 +83,11 @@ export const deleteSafeZone = (id: string) =>
   api.delete(`/me/safe-zones/${id}`).then((r) => r.data);
 
 // ---------- Family ----------
-export const getFamily = () => api.get<FamilyResponse>("/family").then((r) => r.data);
+export const getFamily = () => api.get<FamilyResponse>("/family").then((r): FamilyResponse => {
+  const d = record(r.data);
+  if (d.in_family !== true || !text(d.id)) return { in_family: false };
+  return { ...d, name: text(d.name), invite_code: text(d.invite_code), members: Array.isArray(d.members) ? d.members.filter((m: any) => m && typeof m === 'object').map((m: any) => ({ ...m, name: text(m.name), last_seen: text(m.last_seen) || null })) : [] } as FamilyActive;
+});
 
 export const createFamily = (name: string) =>
   api.post<FamilyActive>("/family", { name }).then((r) => r.data);
@@ -102,7 +109,7 @@ export interface FamilySos {
 // Normalise into FamilySos[] and flag which one is the current user's.
 export const familySos = async (meName?: string): Promise<FamilySos[]> => {
   const { data } = await api.get<{ items?: any[] }>("/family/active-sos");
-  const items = data?.items ?? [];
+  const items = rows<any>(data);
   return items.map((it) => ({
     id: it.id,
     owner_name: it.member_name ?? "A family member",
@@ -125,16 +132,21 @@ export interface IncomingCall {
   has_offer?: boolean;
 }
 export const listIncomingCalls = () =>
-  api.get<{ items?: IncomingCall[] }>("/me/calls/incoming").then((r) => r.data?.items ?? []);
+  api.get<{ items?: IncomingCall[] }>("/me/calls/incoming").then((r) => rows<IncomingCall>(r.data));
 export const rejectCall = (id: string) => api.post(`/me/calls/${id}/reject`, {}).then((r) => r.data);
 export const endCall = (id: string) => api.post(`/me/calls/${id}/end`, {}).then((r) => r.data);
 
 // ---------- Smart QR ----------
-export const listVehicles = () => api.get<Vehicle[]>("/vehicles").then((r) => r.data);
-export const addVehicle = (number_plate: string, vehicle_type: string, make_model?: string) =>
-  api.post<Vehicle>("/vehicles", { number_plate, vehicle_type, make_model }).then((r) => r.data);
+export interface VehiclePayload {
+  number_plate: string; vehicle_type: string; make_model: string | null; color: string | null;
+  speed_limit_kmh: number; photo_base64?: string | null;
+}
+export const listVehicles = () => api.get('/vehicles').then(r => rows<Vehicle>(r.data).map(normalizeVehicle));
+export const getVehicle = (id: string) => api.get(`/vehicles/${encodeURIComponent(id)}`).then(r => normalizeVehicle(r.data));
+export const addVehicle = (payload: VehiclePayload) => api.post('/vehicles', payload).then(r => normalizeVehicle(r.data));
+export const updateVehicle = (id: string, payload: VehiclePayload) => api.put(`/vehicles/${encodeURIComponent(id)}`, payload).then(r => normalizeVehicle(r.data));
 
-export const listTags = () => api.get<Tag[]>("/tags").then((r) => r.data);
+export const listTags = () => api.get<Tag[]>("/tags").then((r) => rows<Tag>(r.data).filter(activeTag).map(t => ({ ...t, name: text(t.name), tag_type: text(t.tag_type), qr_id: text(t.qr_id) })));
 export const addTag = (name: string, tag_type: string) =>
   api.post<Tag>("/tags", { name, tag_type }).then((r) => r.data);
 export const updateTag = (
@@ -146,17 +158,17 @@ export const setTagLost = (id: string, enabled: boolean) =>
 export const setVehicleLost = (id: string, enabled: boolean) =>
   api.post<Vehicle>(`/vehicles/${id}/lost_mode`, { enabled }).then((r) => r.data);
 
-export const listCards = () => api.get<Card[]>("/cards").then((r) => r.data);
+export const listCards = () => api.get<Card[]>("/cards").then((r) => rows<Card>(r.data));
 export const addCard = (display_name: string, title?: string, phone?: string) =>
   api.post<Card>("/cards", { display_name, title, phone }).then((r) => r.data);
 
 // ---------- Alerts & Incidents ----------
-export const listAlerts = () => api.get<AlertItem[]>("/alerts").then((r) => r.data);
+export const listAlerts = () => api.get<AlertItem[]>("/alerts").then((r) => rows<AlertItem>(r.data));
 export const listIncidents = () =>
-  api.get<{ count: number; results: Incident[] }>("/incidents").then((r) => r.data);
+  api.get<{ count: number; results: Incident[] }>("/incidents").then((r) => { const results = rows<Incident>(r.data); return { count: results.length, results }; });
 
 // ---------- Anti-theft devices ----------
-export const listDevices = () => api.get<Device[]>("/devices").then((r) => r.data);
+export const listDevices = () => api.get<Device[]>("/devices").then((r) => rows<Device>(r.data));
 export const addDevice = (name: string, platform: string, model?: string) =>
   api.post<Device>("/devices", { name, platform, model }).then((r) => r.data);
 export const lockState = (id: string) =>
@@ -170,8 +182,10 @@ export const reportSimSwap = (id: string) =>
 
 // scan URL that a QR should encode — the public web portal page on neksathi.in
 // (the API lives on api.neksathi.in; the human-facing scan page is on the web domain).
-export const scanUrl = (qrId: string) =>
-  `https://neksathi.in/scan/${qrId}`;
+export const scanUrl = (qrId: string) => {
+  if (!webOrigin || !validQrId(qrId)) return '';
+  return `${webOrigin}/scan/${encodeURIComponent(qrId)}`;
+};
 // ---------- Public scan / report (finder flow, no ownership required) ----------
 export interface ResolvedItem {
   kind?: string;
@@ -239,14 +253,34 @@ export const messageCard = (qrId: string, payload: { name?: string; phone?: stri
 
 // pull a bare qr id out of a scanned value (URL or raw id).
 // Handles portal URLs "/scan/<id>", "/t/<id>", "/c/<id>" and raw ids.
+export const validQrId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{6,128}$/.test(value);
 export const parseQrValue = (value: string): string => {
-  const trimmed = value.trim();
-  for (const marker of ["/scan/", "/t/", "/c/", "/api/s/", "/s/"]) {
-    const idx = trimmed.indexOf(marker);
-    if (idx >= 0) return trimmed.slice(idx + marker.length).split(/[/?#]/)[0];
-  }
-  return trimmed.split(/[/?#]/).pop() || trimmed;
+  const trimmed = text(value).trim();
+  if (validQrId(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    const allowedHosts = [webOrigin, apiOrigin].filter(Boolean).map(origin => new URL(origin).host.replace(/^www\./, ''));
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !allowedHosts.includes(parsed.host.replace(/^www\./, ''))) return '';
+    const match = parsed.pathname.match(/^\/(?:scan|t|c|api\/s|s)\/([A-Za-z0-9_-]+)\/?$/);
+    return match && validQrId(match[1]) ? match[1] : '';
+  } catch { return ''; }
 };
+
+export async function resolveScannedQr(qrId: string): Promise<{ kind: 'vehicle' | 'tag' | 'card'; item: ResolvedItem }> {
+  if (!validQrId(qrId)) throw new Error('This is not a valid NekSathi QR code.');
+  const { data } = await api.get(`/public/resolve/${encodeURIComponent(qrId)}`);
+  const resolved = record(data);
+  if (resolved.qr_id && resolved.qr_id !== qrId) throw new Error('This QR could not be matched safely. Please contact support.');
+  if (['deleted', 'expired', 'blocked', 'unassigned', 'inactive'].includes(text(resolved.status))) throw new Error('This QR is inactive, expired, or not assigned to an item.');
+  const kind = resolved.entity_type;
+  if (!['vehicle', 'tag', 'card'].includes(kind)) throw new Error('This QR is not assigned to a supported item.');
+  const item = await (kind === 'vehicle' ? resolveQr(qrId) : kind === 'tag' ? resolveTag(qrId) : resolveCard(qrId));
+  if (!item || item.qr_id !== qrId) throw new Error('This QR record is incomplete. Please try again.');
+  const d = record(item);
+  const safeItem = { ...d };
+  for (const field of ['number_plate', 'vehicle_type', 'make_model', 'color', 'name', 'tag_type', 'display_name', 'title', 'owner_first_name', 'reward_text']) safeItem[field] = text(d[field]);
+  return { kind, item: safeItem };
+}
 export interface WebRTCSessionDescriptionPayload {
   type: "offer" | "answer";
   sdp: string;
@@ -301,7 +335,7 @@ export interface IncidentDetail {
 
 // Owner-side list of live incidents (actionable). Newest first.
 export const listIncidentDetails = () =>
-  api.get<{ count: number; results: IncidentDetail[] }>("/incidents").then((r) => r.data.results ?? []);
+  api.get<{ count: number; results: IncidentDetail[] }>("/incidents").then((r) => rows<IncidentDetail>(r.data));
 
 // Fetch a single incident for the owner (find it in their list; fall back to the
 // public read if it has already rolled off the owner list).
@@ -341,7 +375,7 @@ export interface VehicleContact {
 }
 
 export const listVehicleContacts = (vehicleId: string) =>
-  api.get<VehicleContact[]>(`/vehicles/${vehicleId}/contacts`).then((r) => r.data);
+  api.get<VehicleContact[]>(`/vehicles/${vehicleId}/contacts`).then((r) => rows<VehicleContact>(r.data));
 
 export const addVehicleContact = (
   vehicleId: string,

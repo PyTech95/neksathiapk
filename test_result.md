@@ -101,6 +101,53 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## Current session — Startup resilience and website/API parity
+final_verification:
+  report: "/app/test_reports/iteration_15_retest.json"
+  code_checks: "TypeScript PASS; Android JS export --no-bytecode PASS; no lint errors"
+  backend_checks: "5/5 live API pytest PASS"
+  reported_bugs: "Both iteration15 issues fixed and self-tested; global atomic bootstrap gate and inline tag selector"
+  self_retest: "PASS: real session with SIMULATED 500/null/offline -> Retry, retry preserves login, SIMULATED authenticated401 -> login, real inline tag search, public invalid QR deep-link, QR network retry, real owned QR render/share at360px, untrusted URL blocked"
+  limitations: "No APK/device/Logcat. Separate make/model catalog and vehicle-tag mapping unavailable upstream. See memory/FIX_REPORT.md."
+  source_changes_by_test_agent: "Only test_live_api_parity_iteration15.py and reports; reviewed, no product edits"
+frontend_current:
+  - task: "Session restore, retry screen, route guard and deferred native initialization"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+    priority: "high"
+    status_history:
+      - agent: "main"
+        working: "NA"
+        comment: "User reports Android startup process exits; no Logcat/adb/Android SDK/device available. Hardened stored-token parsing, offline/5xx preservation, authenticated-401-only invalidation, storage-write validation, route guards, fonts, notification setup and lazy WebRTC. Fixed actual Android JS export failure from WebRTC event-target-shim/index imports with scoped Babel rewrite. Android JS export --no-bytecode PASS; Hermes executable is x86 on aarch64 host, so no APK/device verification claimed."
+  - task: "Vehicle add/edit/detail, uppercase registration, server schema options, colour/speed and QR verification"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+    priority: "high"
+    status_history:
+      - agent: "main"
+        working: "NA"
+        comment: "New vehicle-form/vehicle-detail consume unchanged live /api/vehicles and /api/vehicles/{id}; server /openapi.json provides type enum and speed rules, no catalogs hardcoded. Combined free-text make_model matches website precisely. Single/double-submit advisory duplicate registration checks. Public /resolve -> entity-specific QR and per-vehicle matching, share/copy links, scan own QR -> detail."
+  - task: "Permission explanations/settings recheck, tags refresh, dynamic bike icons, invalid/null safety"
+    implemented: true
+    working: "NA"
+    needs_retesting: true
+    priority: "high"
+    status_history:
+      - agent: "main"
+        working: "NA"
+        comment: "Camera feature-only request with paste fallback and AppState recheck; location explanation and timeout; background automation never prompts; notification enable via profile/permissions only. /tags dynamic types/names; mapping chips only for explicit backend mappings. Live API has no separate make/model catalogs and no vehicle-tag mapping/status/color fields (blocked upstream, not fabricated)."
+current_test_plan:
+  testing_type: "frontend plus real production API integration"
+  account: "Read /app/memory/test_credentials.md; use demo account only"
+  caution: "Never edit/delete existing production records, no SOS/alert notifications to real users; create unique test car/bike/tag if needed and clean up ONLY those IDs. Website source/backend/database schema remain untouched."
+  current_focus: ["offline and expired restore", "add car and bike", "edit and reopen", "website-created tags refresh", "QR resolver and invalid code", "permissions fallback", "logout/login", "small phone overflow"]
+  known_limits: ["no Android physical device or APK toolchain", "catalog/mapping endpoints absent from production", "TURN/OTP blockers from handoff remain separate"]
+agent_communication_current:
+  agent: "main"
+  message: "tsc --noEmit PASS. JS lint no errors, older hook warnings remain. Android JS export --no-bytecode PASS. First preview login/form/schema selection verified. Please rigorous tests after the major changes, save screenshots and tests/report files; do not change product code. Use route simulation only for offline/401/null tests, clearly label simulations."
+
 ## Session (fork) — Safety Check-In & Fake-Off Decoy verification
 frontend:
   - task: "Safety Check-In (timer-based auto-SOS dead-man's switch)"
